@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>BAMP</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;
+    font-family:system-ui,sans-serif;color:#0f0}
+  #stage{display:flex;align-items:center;justify-content:center;height:100%;
+    text-align:center;padding:1rem;box-sizing:border-box}
+  #msg{font-size:clamp(2rem,14vw,7rem);font-weight:900;line-height:1.05;word-break:break-word}
+  #hint{position:fixed;bottom:1rem;width:100%;text-align:center;opacity:.6;font-size:.9rem}
+  .flash{animation:fl .18s infinite alternate}
+  @keyframes fl{from{background:#000;color:#0f0}to{background:#0f0;color:#000}}
+</style>
+</head>
+<body>
+<div id="stage"><div id="msg">TIPPEN</div></div>
+<div id="hint">Bildschirm antippen zum Verbinden</div>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+const MSGS = ["AUFSTEHEN!","BAMP!","WACH WERDEN!","SCHLAFMÜTZE!","HANDY KLINGELT!",
+  "AUFWACHEN!","NICHT WEGDRÜCKEN!","BAMP BAMP BAMP!","ES IST SOWEIT!","BEWEG DICH!",
+  "SONST WIRD'S LAUTER!","WACH!","AUF!","JETZT!","LOS!"];
+
+const msgEl = document.getElementById('msg');
+const hint  = document.getElementById('hint');
+let ctx, osc, gain, lock=null, peer, conn, running=false;
+let spamT, vibeT, freqT, volT;
+
+// Raum-ID aus URL (?r=xxxx) oder Standard
+const room = new URLSearchParams(location.search).get('r') || 'bamp-default';
+
+function audio(){
+  ctx = new (window.AudioContext||window.webkitAudioContext)();
+  osc = ctx.createOscillator(); gain = ctx.createGain();
+  osc.type='sawtooth'; osc.frequency.value=1000; gain.gain.value=0.9;
+  osc.connect(gain).connect(ctx.destination); osc.start();
+  const now=ctx.currentTime;
+  gain.gain.setValueAtTime(0.1,now); gain.gain.linearRampToValueAtTime(1,now+2);
+  let up=true;
+  freqT=setInterval(()=>{ if(!ctx)return; const t=ctx.currentTime;
+    osc.frequency.cancelScheduledValues(t);
+    osc.frequency.linearRampToValueAtTime(up?1600:500,t+0.3); up=!up; },300);
+  volT=setInterval(()=>{ if(!ctx)return; const t=ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.linearRampToValueAtTime(1,t+0.1);
+    gain.gain.linearRampToValueAtTime(0.6,t+0.4); },450);
+}
+function vibe(){ const p=[500,150,500,150,1000,300];
+  const b=()=>{ if(navigator.vibrate) navigator.vibrate(p); }; b();
+  vibeT=setInterval(b,2200); }
+function spam(){ let i=0; msgEl.classList.add('flash');
+  spamT=setInterval(()=>{ msgEl.textContent=MSGS[Math.floor(Math.random()*MSGS.length)];
+    if(navigator.vibrate) navigator.vibrate(80); },1500); }
+async function awake(){ try{ if('wakeLock' in navigator) lock=await navigator.wakeLock.request('screen'); }catch(e){} }
+
+function startAll(){
+  if(running) return; running=true;
+  hint.textContent="VERBUNDEN – läuft";
+  const el=document.documentElement;
+  if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+  else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  audio(); vibe(); spam(); awake();
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&running) awake(); });
+}
+function stopAll(){
+  running=false; clearInterval(spamT); clearInterval(vibeT);
+  clearInterval(freqT); clearInterval(volT);
+  if(navigator.vibrate) navigator.vibrate(0);
+  if(ctx){ try{osc.stop();ctx.close();}catch(e){} ctx=null; }
+  msgEl.classList.remove('flash'); msgEl.textContent="PAUSE"; hint.textContent="gestoppt";
+}
+
+function connect(){
+  peer = new Peer('bamp-' + room);
+  peer.on('open', ()=>{ hint.textContent="Warte auf Steuerung …"; });
+  peer.on('connection', c=>{
+    conn=c;
+    c.on('data', d=>{
+      if(d==='start') startAll();
+      else if(d==='stop') stopAll();
+    });
+    c.on('open', ()=>{ hint.textContent="Steuerung verbunden. Tippen = Start"; });
+  });
+  peer.on('error', e=>{ hint.textContent="Fehler: "+e.type; });
+}
+
+document.body.addEventListener('click', ()=>{
+  if(ctx && ctx.state==='suspended') ctx.resume();
+  startAll();
+});
+connect();
+setInterval(()=>{ if(running&&!lock) awake(); },4000);
+</script>
+</body>
+</html>

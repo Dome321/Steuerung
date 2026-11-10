@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BAMP Steuerung</title>
+<style>
+  body{margin:0;height:100vh;display:flex;flex-direction:column;justify-content:center;
+    align-items:center;gap:1rem;background:#111;color:#0f0;font-family:system-ui,sans-serif}
+  input,button{font-size:1.4rem;padding:1rem 1.5rem;border-radius:10px;border:0}
+  input{width:80%;max-width:340px;text-align:center}
+  button{font-weight:900;min-width:220px}
+  #start{background:#0f0;color:#000}
+  #stop{background:#f33;color:#fff}
+  #stat{opacity:.7;font-size:.9rem;text-align:center;padding:0 1rem}
+</style>
+</head>
+<body>
+<input id="room" placeholder="Raum-Code (gleich wie Empfänger)">
+<button id="conn">VERBINDEN</button>
+<button id="start" disabled>START</button>
+<button id="stop" disabled>STOP</button>
+<div id="stat"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+const roomEl=document.getElementById('room'), stat=document.getElementById('stat');
+const startBtn=document.getElementById('start'), stopBtn=document.getElementById('stop');
+let peer, conn;
+
+document.getElementById('conn').onclick=()=>{
+  const room=roomEl.value.trim();
+  if(!room){ stat.textContent="Bitte Raum-Code eingeben"; return; }
+  if(peer){ try{peer.destroy();}catch(e){} }
+  peer=new Peer();
+  peer.on('open', id=>{
+    stat.textContent="Verbinde mit Raum '"+room+"' …";
+    conn=peer.connect('bamp-'+room);
+    conn.on('open', ()=>{
+      stat.textContent="VERBUNDEN mit "+room;
+      startBtn.disabled=false; stopBtn.disabled=false;
+    });
+    conn.on('close', ()=>{
+      stat.textContent="Verbindung weg";
+      startBtn.disabled=true; stopBtn.disabled=true;
+    });
+  });
+  peer.on('error', e=>{ stat.textContent="Fehler: "+e.type; });
+};
+startBtn.onclick=()=>{ if(conn&&conn.open){ conn.send('start'); stat.textContent="START gesendet"; } };
+stopBtn.onclick=()=>{ if(conn&&conn.open){ conn.send('stop'); stat.textContent="STOP gesendet"; } };
+</script>
+</body>
+</html>
